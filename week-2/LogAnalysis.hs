@@ -1,8 +1,11 @@
+{-# OPTIONS_GHC -Wno-overlapping-patterns #-}
 module Log where
 
 import Control.Applicative
+import Distribution.Simple.Test (test)
+import Data.IntMap (insert)
 
-data MessageType = Info
+data MessageType = Info  
                  | Warning
                  | Error Int
   deriving (Show, Eq)
@@ -22,9 +25,11 @@ data MessageTree = Leaf
 testParse :: (String -> [LogMessage])
           -> Int
           -> FilePath
-          -> IO [LogMessage]
-testParse parse n file = take n . parse <$> readFile file
-
+          -> IO ()
+testParse parse n file = do
+    content <- readFile file
+    let msgs = take n $ parse content
+    mapM_ print msgs
 -- | @testWhatWentWrong p w f@ tests the log file parser @p@ and
 --   warning message extractor @w@ by running them on the log file
 --   @f@.
@@ -34,3 +39,34 @@ testWhatWentWrong :: (String -> [LogMessage])
                   -> IO [String]
 testWhatWentWrong parse whatWentWrong file
   = whatWentWrong . parse <$> readFile file
+
+parseMessage :: String -> LogMessage
+parseMessage str = 
+  case words str of
+    ("I" : ts : msg) -> LogMessage Info (read ts) (unwords msg)
+    ("W" : ts : msg) -> LogMessage Warning (read ts) (unwords msg)
+    ("E" : code : ts : msg) -> LogMessage (Error (read code)) (read ts) (unwords msg)
+    s -> Unknown (unwords s)  
+
+parse :: String -> [LogMessage]
+parse s = map parseMessage (lines s)
+
+
+getTime :: LogMessage -> Maybe TimeStamp
+getTime (LogMessage _ ts _) = Just ts
+getTime (Unknown _) = Nothing
+
+-- hakell is immutalble, so each insert we create a new tree
+insertLog :: LogMessage -> MessageTree -> MessageTree
+insertLog msg leaf = Node leaf msg leaf
+insertLog msg (Node left nodemsg right) = 
+  case (getTime msg , getTime nodemsg) of 
+     (Nothing, _) -> Node left nodemsg right
+     (_, Nothing) -> Node left nodemsg right
+     (Just ts1, Just ts2) -> 
+        if ts1 < ts2 
+          then Node (insertLog msg left) nodemsg right
+          else Node left nodemsg (insertLog msg right) 
+
+main = do 
+  testParse parse 10 "g:\\coding\\github\\Haskell\\week-2\\error.log"
