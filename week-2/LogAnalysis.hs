@@ -1,11 +1,7 @@
 {-# OPTIONS_GHC -Wno-overlapping-patterns #-}
 module Log where
 
-import Control.Applicative
-import Distribution.Simple.Test (test)
-import Data.IntMap (insert)
-
-data MessageType = Info  
+data MessageType = Info
                  | Warning
                  | Error Int
   deriving (Show, Eq)
@@ -41,12 +37,12 @@ testWhatWentWrong parse whatWentWrong file
   = whatWentWrong . parse <$> readFile file
 
 parseMessage :: String -> LogMessage
-parseMessage str = 
+parseMessage str =
   case words str of
     ("I" : ts : msg) -> LogMessage Info (read ts) (unwords msg)
     ("W" : ts : msg) -> LogMessage Warning (read ts) (unwords msg)
     ("E" : code : ts : msg) -> LogMessage (Error (read code)) (read ts) (unwords msg)
-    s -> Unknown (unwords s)  
+    s -> Unknown (unwords s)
 
 parse :: String -> [LogMessage]
 parse s = map parseMessage (lines s)
@@ -58,15 +54,35 @@ getTime (Unknown _) = Nothing
 
 -- hakell is immutalble, so each insert we create a new tree
 insertLog :: LogMessage -> MessageTree -> MessageTree
-insertLog msg leaf = Node leaf msg leaf
-insertLog msg (Node left nodemsg right) = 
-  case (getTime msg , getTime nodemsg) of 
+insertLog msg Leaf = Node Leaf msg Leaf
+insertLog msg (Node left nodemsg right) =
+  case (getTime msg , getTime nodemsg) of
      (Nothing, _) -> Node left nodemsg right
      (_, Nothing) -> Node left nodemsg right
-     (Just ts1, Just ts2) -> 
-        if ts1 < ts2 
+     (Just ts1, Just ts2) ->
+        if ts1 < ts2
           then Node (insertLog msg left) nodemsg right
-          else Node left nodemsg (insertLog msg right) 
+          else Node left nodemsg (insertLog msg right)
 
-main = do 
-  testParse parse 10 "g:\\coding\\github\\Haskell\\week-2\\error.log"
+build :: [LogMessage] -> MessageTree
+build [] = Leaf
+build (x:xs) = insertLog x (build xs)
+
+inorder :: MessageTree -> [LogMessage]
+inorder Leaf = []
+inorder (Node left nodeMsg right) = 
+  inorder left ++ [nodeMsg] ++ inorder right
+
+whatWentWrong :: [LogMessage] -> [String]
+whatWentWrong[] = []
+whatWentWrong (x:xs) = 
+  case x of 
+    LogMessage (Error sevirity) _ msg | sevirity >= 50 -> msg : whatWentWrong xs
+    _ -> whatWentWrong xs
+  
+main = do
+  myFile <- readFile "g:\\coding\\github\\Haskell\\week-2\\sample.log"
+  let parsedFile = parse myFile
+  let tree = build parsedFile
+  print( whatWentWrong parsedFile)
+  print " Done "
